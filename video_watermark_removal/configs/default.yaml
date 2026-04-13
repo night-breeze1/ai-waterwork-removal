@@ -1,0 +1,37 @@
+
+model:
+  name: 'UNet'
+  in_channels: 3
+  out_channels: 3
+  bilinear: false
+
+training:
+  batch_size: 8
+  num_epochs: 100
+  learning_rate: 0.0002
+  beta1: 0.5
+  beta2: 0.999
+  weight_decay: 0.0001
+  
+  # Loss weights
+  lambda_l1: 100.0
+  lambda_perceptual: 10.0
+  lambda_adversarial: 1.0
+  lambda_tv: 0.001
+  
+  # Checkpoint
+  save_interval: 5
+  checkpoint_dir: './checkpoints'
+  log_dir: './logs'
+
+data:
+  train_dir: './data/train'
+  val_dir: './data/val'
+  img_size: [256, 256]
+  max_frames_per_video: 10
+  num_workers: 4
+
+inference:
+  checkpoint_path: './checkpoints/latest.pth'
+  output_dir: './output'
+  batch_size: 4

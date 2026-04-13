@@ -1,0 +1,73 @@
+
+# AI视频去水印模型开发提示词
+
+## 任务概述
+请开发一个高质量的深度学习模型，用于去除视频中的水印。这个模型需要能够处理各种类型的水印（文字、logo、半透明等），并保持原始视频的视觉质量。
+
+## 技术要求
+
+### 1. 模型架构设计
+- 采用Encoder-Decoder架构，类似UNet或LaMa (Large Mask Inpainting)结构
+- 使用Transformer或Attention机制处理长距离依赖
+- 考虑使用GAN (Generative Adversarial Network)提升生成质量
+- 支持可变大小的输入输出
+- 可选：集成视频时序信息处理（光流、3D卷积等）
+
+### 2. 数据集准备
+- 支持无水印视频作为ground truth
+- 自动生成带水印的训练数据（支持多种水印类型）
+- 数据增强：旋转、缩放、颜色抖动、噪声添加等
+- 数据格式：支持MP4、AVI等常见视频格式
+
+### 3. 损失函数设计
+- 重建损失：MSE、MAE、Perceptual Loss (VGG feature)
+- 对抗损失：WGAN-GP或LSGAN
+- 风格损失：Gram Matrix
+- 总变差损失（TV Loss）：保持图像平滑
+
+### 4. 训练策略
+- 预训练：先在图像去水印任务上预训练
+- 微调：在视频序列上进行微调
+- 学习率调度：Cosine Annealing或ReduceLROnPlateau
+- 混合精度训练（AMP）
+- 梯度累积
+
+### 5. 推理优化
+- 支持批处理
+- 支持GPU加速
+- 视频帧之间的时序一致性处理
+- 输出视频编码优化
+
+## 代码结构要求
+
+```
+video_watermark_removal/
+├── configs/              # 配置文件
+├── data/                 # 数据处理模块
+├── models/               # 模型定义
+├── utils/                # 工具函数
+├── train.py              # 训练脚本
+├── inference.py          # 推理脚本
+└── requirements.txt      # 依赖包
+```
+
+## 技术栈建议
+- 深度学习框架：PyTorch
+- 视频处理：OpenCV, FFmpeg
+- 可视化：TensorBoard, Matplotlib
+- 其他：NumPy, PIL/Pillow
+
+## 关键功能点
+1. 支持自动检测水印位置
+2. 支持手动指定水印区域
+3. 批处理多个视频
+4. 保持视频音频不变
+5. 提供质量评估指标（PSNR, SSIM, LPIPS）
+
+## 输出要求
+请提供完整的可运行代码，包括：
+- 模型定义
+- 训练脚本
+- 推理脚本
+- 详细的使用说明
+- 示例配置
