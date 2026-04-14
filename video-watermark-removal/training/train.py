@@ -5,10 +5,12 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR
 import argparse
 from tqdm import tqdm
+import json
 
 from models.architectures.video_unet import VideoUNet
 from utils.data import create_dataloader
 from utils.metrics import calculate_psnr, calculate_ssim
+from utils.visualization import visualize_training_history
 
 def train_one_epoch(model, dataloader, optimizer, criterion, device):
     """
@@ -148,6 +150,12 @@ def main():
     # 定义学习率调度器
     scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs)
     
+    # 训练历史记录
+    train_losses = []
+    val_losses = []
+    val_psnrs = []
+    val_ssims = []
+    
     # 训练循环
     best_psnr = 0.0
     for epoch in range(args.epochs):
@@ -156,6 +164,7 @@ def main():
         
         # 训练
         train_loss = train_one_epoch(model, train_dataloader, optimizer, criterion, device)
+        train_losses.append(train_loss)
         print(f'Train Loss: {train_loss:.4f}')
         
         # 更新学习率
@@ -164,6 +173,9 @@ def main():
         # 验证
         if (epoch + 1) % args.val_interval == 0:
             val_loss, val_psnr, val_ssim = validate(model, val_dataloader, criterion, device)
+            val_losses.append(val_loss)
+            val_psnrs.append(val_psnr)
+            val_ssims.append(val_ssim)
             print(f'Val Loss: {val_loss:.4f}, Val PSNR: {val_psnr:.2f}, Val SSIM: {val_ssim:.4f}')
             
             # 保存最佳模型
@@ -171,11 +183,37 @@ def main():
                 best_psnr = val_psnr
                 torch.save(model.state_dict(), os.path.join(args.model_dir, 'best_model.pth'))
                 print(f'保存最佳模型，PSNR: {best_psnr:.2f}')
+        else:
+            # 填充未验证的epoch，保持列表长度一致
+            val_losses.append(None)
+            val_psnrs.append(None)
+            val_ssims.append(None)
         
         # 定期保存模型
         if (epoch + 1) % args.save_interval == 0:
             torch.save(model.state_dict(), os.path.join(args.model_dir, f'model_epoch_{epoch+1}.pth'))
             print(f'保存模型到: {os.path.join(args.model_dir, f"model_epoch_{epoch+1}.pth")}')
+    
+    # 保存训练历史
+    history = {
+        'train_losses': train_losses,
+        'val_losses': [float(x) if x is not None else None for x in val_losses],
+        'val_psnrs': [float(x) if x is not None else None for x in val_psnrs],
+        'val_ssims': [float(x) if x is not None else None for x in val_ssims]
+    }
+    
+    with open(os.path.join(args.model_dir, 'training_history.json'), 'w') as f:
+        json.dump(history, f)
+    print(f'训练历史已保存到: {os.path.join(args.model_dir, "training_history.json")}')
+    
+    # 可视化训练历史
+    visualize_training_history(
+        train_losses,
+        [x for x in val_losses if x is not None],
+        [x for x in val_psnrs if x is not None],
+        [x for x in val_ssims if x is not None],
+        save_path=os.path.join(args.model_dir, 'training_history.png')
+    )
     
     print('\n训练完成!')
 

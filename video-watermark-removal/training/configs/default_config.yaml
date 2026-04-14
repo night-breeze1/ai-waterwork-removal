@@ -1,0 +1,29 @@
+# 视频水印去除模型配置文件
+
+# 数据配置
+data:
+  video_dir: "data/raw/videos"  # 无水印视频目录
+  watermark_dir: "data/raw/watermarks"  # 水印图像目录
+  frame_count: 16  # 每段视频的帧数
+  frame_size: [256, 256]  # 帧大小 (height, width)
+
+# 训练配置
+training:
+  batch_size: 8  # 批次大小
+  epochs: 200  # 训练轮次
+  lr: 0.0001  # 学习率
+  weight_decay: 0.00001  # 权重衰减
+  save_interval: 20  # 模型保存间隔（epoch）
+  val_interval: 5  # 验证间隔（epoch）
+  model_dir: "models/pretrained"  # 模型保存目录
+
+# 模型配置
+model:
+  in_channels: 3  # 输入通道数
+  out_channels: 3  # 输出通道数
+
+# 推理配置
+inference:
+  frame_count: 16  # 每段视频的帧数
+  frame_size: [256, 256]  # 帧大小
+  output_path: "output.mp4"  # 默认输出路径

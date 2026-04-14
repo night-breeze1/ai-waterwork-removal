@@ -5,6 +5,34 @@ import numpy as np
 import argparse
 from models.architectures.video_unet import VideoUNet
 
+def process_single_frame(frame, model, device, frame_size=(256, 256)):
+    """
+    处理单帧图像
+
+    Args:
+        frame: 输入帧
+        model: 模型
+        device: 设备
+        frame_size: 帧大小
+
+    Returns:
+        处理后的帧
+    """
+    resized_frame = cv2.resize(frame, frame_size)
+    rgb_frame = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB)
+    normalized_frame = rgb_frame.astype(np.float32) / 255.0
+    input_tensor = torch.from_numpy(normalized_frame).permute(2, 0, 1).unsqueeze(0).unsqueeze(0).to(device)
+
+    with torch.no_grad():
+        output = model(input_tensor)
+
+    output = output.squeeze(0).squeeze(0).permute(1, 2, 0).cpu().numpy()
+    output = np.clip(output, 0, 1) * 255
+    output = output.astype(np.uint8)
+    output_frame = cv2.cvtColor(output, cv2.COLOR_RGB2BGR)
+
+    return output_frame
+
 def process_video(video_path, model, device, frame_count=16, frame_size=(256, 256)):
     """
     处理视频文件，去除水印
