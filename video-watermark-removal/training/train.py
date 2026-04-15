@@ -7,6 +7,13 @@ import argparse
 from tqdm import tqdm
 import json
 
+# 自定义tuple类型解析器
+def tuple_type(s):
+    try:
+        return tuple(map(int, s.split(',')))
+    except:
+        raise argparse.ArgumentTypeError("必须是逗号分隔的整数，例如: 256,256")
+
 from models.architectures.video_unet import VideoUNet
 from utils.data import create_dataloader
 from utils.metrics import calculate_psnr, calculate_ssim
@@ -99,7 +106,7 @@ def main():
     parser.add_argument('--watermark_dir', type=str, default='data/raw/watermarks', help='水印图像目录')
     parser.add_argument('--batch_size', type=int, default=8, help='批次大小')
     parser.add_argument('--frame_count', type=int, default=16, help='每段视频的帧数')
-    parser.add_argument('--frame_size', type=tuple, default=(256, 256), help='帧大小')
+    parser.add_argument('--frame_size', type=tuple_type, default=(256, 256), help='帧大小 (宽度,高度)')
     parser.add_argument('--epochs', type=int, default=200, help='训练轮次')
     parser.add_argument('--lr', type=float, default=1e-4, help='学习率')
     parser.add_argument('--weight_decay', type=float, default=1e-5, help='权重衰减')

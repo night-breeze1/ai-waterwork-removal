@@ -5,6 +5,13 @@ import numpy as np
 import argparse
 from models.architectures.video_unet import VideoUNet
 
+# 自定义tuple类型解析器
+def tuple_type(s):
+    try:
+        return tuple(map(int, s.split(',')))
+    except:
+        raise argparse.ArgumentTypeError("必须是逗号分隔的整数，例如: 256,256")
+
 def process_single_frame(frame, model, device, frame_size=(256, 256)):
     """
     处理单帧图像
@@ -35,67 +42,98 @@ def process_single_frame(frame, model, device, frame_size=(256, 256)):
 
 def process_video(video_path, model, device, frame_count=16, frame_size=(256, 256)):
     """
-    处理视频文件，去除水印
-    
+    处理视频
+
     Args:
         video_path: 视频路径
         model: 模型
         device: 设备
         frame_count: 每段视频的帧数
         frame_size: 帧大小
-    
+
     Returns:
         处理后的视频帧
     """
+    # 输入验证
+    if not os.path.exists(video_path):
+        raise FileNotFoundError(f"视频文件不存在: {video_path}")
+    
     # 打开视频
-    cap = cv2.VideoCapture(video_path)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    
-    # 读取视频帧
-    frames = []
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        # 调整大小
-        frame = cv2.resize(frame, frame_size)
-        # 转换为RGB
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frames.append(frame)
-    cap.release()
-    
-    # 转换为numpy数组
-    frames = np.array(frames, dtype=np.float32) / 255.0
-    
-    # 分批次处理
-    processed_frames = []
-    for i in range(0, len(frames), frame_count):
-        # 获取当前批次的帧
-        batch_frames = frames[i:i+frame_count]
+    cap = None
+    try:
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            raise RuntimeError(f"无法打开视频文件: {video_path}")
         
-        # 确保批次大小正确
-        if len(batch_frames) < frame_count:
-            # 填充最后一帧
-            while len(batch_frames) < frame_count:
-                batch_frames = np.append(batch_frames, [batch_frames[-1]], axis=0)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
         
-        # 转换为tensor
-        batch_frames = torch.from_numpy(batch_frames).permute(0, 3, 1, 2).unsqueeze(0).to(device)
+        # 流式处理视频帧
+        processed_frames = []
+        frame_buffer = []
         
-        # 前向传播
-        with torch.no_grad():
-            output = model(batch_frames)
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            # 调整大小
+            frame = cv2.resize(frame, frame_size)
+            # 转换为RGB
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            # 归一化
+            frame = frame.astype(np.float32) / 255.0
+            
+            # 添加到缓冲区
+            frame_buffer.append(frame)
+            
+            # 当缓冲区达到指定帧数时处理
+            if len(frame_buffer) == frame_count:
+                # 转换为tensor
+                batch_frames = torch.from_numpy(np.array(frame_buffer)).permute(0, 3, 1, 2).unsqueeze(0).to(device)
+                
+                # 前向传播
+                with torch.no_grad():
+                    output = model(batch_frames)
+                
+                # 转换回numpy数组
+                output = output.squeeze(0).permute(0, 2, 3, 1).cpu().numpy()
+                output = np.clip(output, 0, 1) * 255
+                output = output.astype(np.uint8)
+                
+                # 转换回BGR格式并添加到结果
+                for frame_out in output:
+                    frame_out = cv2.cvtColor(frame_out, cv2.COLOR_RGB2BGR)
+                    processed_frames.append(frame_out)
+                
+                # 清空缓冲区，保留最后一帧作为下一批的开始
+                frame_buffer = frame_buffer[-1:]
         
-        # 转换回numpy数组
-        output = output.squeeze(0).permute(0, 2, 3, 1).cpu().numpy()
-        output = np.clip(output, 0, 1) * 255
-        output = output.astype(np.uint8)
-        
-        # 转换回BGR格式
-        for frame in output:
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-            processed_frames.append(frame)
+        # 处理剩余的帧
+        if frame_buffer:
+            # 填充到指定帧数
+            while len(frame_buffer) < frame_count:
+                frame_buffer.append(frame_buffer[-1])
+            
+            # 转换为tensor
+            batch_frames = torch.from_numpy(np.array(frame_buffer)).permute(0, 3, 1, 2).unsqueeze(0).to(device)
+            
+            # 前向传播
+            with torch.no_grad():
+                output = model(batch_frames)
+            
+            # 转换回numpy数组
+            output = output.squeeze(0).permute(0, 2, 3, 1).cpu().numpy()
+            output = np.clip(output, 0, 1) * 255
+            output = output.astype(np.uint8)
+            
+            # 转换回BGR格式并添加到结果
+            for frame_out in output:
+                frame_out = cv2.cvtColor(frame_out, cv2.COLOR_RGB2BGR)
+                processed_frames.append(frame_out)
+    finally:
+        if cap is not None:
+            cap.release()
     
     # 截取实际帧数
     processed_frames = processed_frames[:total_frames]
@@ -136,9 +174,16 @@ def main():
     parser.add_argument('--output_path', type=str, default='output.mp4', help='输出视频路径')
     parser.add_argument('--model_path', type=str, default='models/pretrained/best_model.pth', help='模型路径')
     parser.add_argument('--frame_count', type=int, default=16, help='每段视频的帧数')
-    parser.add_argument('--frame_size', type=tuple, default=(256, 256), help='帧大小')
+    parser.add_argument('--frame_size', type=tuple_type, default=(256, 256), help='帧大小 (宽度,高度)')
     
     args = parser.parse_args()
+    
+    # 输入验证
+    if not os.path.exists(args.video_path):
+        raise FileNotFoundError(f"视频文件不存在: {args.video_path}")
+    
+    if not os.path.exists(args.model_path):
+        raise FileNotFoundError(f"模型文件不存在: {args.model_path}")
     
     # 选择设备
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -148,9 +193,12 @@ def main():
     model = VideoUNet().to(device)
     
     # 加载模型权重
-    model.load_state_dict(torch.load(args.model_path, map_location=device))
-    model.eval()
-    print(f'模型加载完成: {args.model_path}')
+    try:
+        model.load_state_dict(torch.load(args.model_path, map_location=device))
+        model.eval()
+        print(f'模型加载完成: {args.model_path}')
+    except Exception as e:
+        raise RuntimeError(f"模型加载失败: {e}")
     
     # 处理视频
     print('处理视频...')

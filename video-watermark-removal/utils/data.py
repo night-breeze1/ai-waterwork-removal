@@ -1,16 +1,33 @@
 import os
 import cv2
 import numpy as np
-import torch
-from torch.utils.data import Dataset, DataLoader
 import random
+from torch.utils.data import Dataset
+
+# 文件路径安全性验证
+def is_safe_filename(filename):
+    """
+    验证文件名是否安全，防止路径遍历攻击
+    
+    Args:
+        filename: 文件名
+        
+    Returns:
+        bool: 是否安全
+    """
+    return (
+        filename 
+        and not filename.startswith('.')
+        and '..' not in filename
+        and os.path.basename(filename) == filename
+    )
 
 class VideoWatermarkDataset(Dataset):
     """视频水印去除数据集"""
     def __init__(self, video_dir, watermark_dir, frame_count=16, frame_size=(256, 256), transform=None):
         """
         初始化数据集
-        
+
         Args:
             video_dir: 无水印视频目录
             watermark_dir: 水印图像目录
@@ -18,6 +35,12 @@ class VideoWatermarkDataset(Dataset):
             frame_size: 帧大小
             transform: 数据增强变换
         """
+        # 输入验证
+        if not os.path.exists(video_dir):
+            raise FileNotFoundError(f"视频目录不存在: {video_dir}")
+        if not os.path.exists(watermark_dir):
+            raise FileNotFoundError(f"水印目录不存在: {watermark_dir}")
+        
         self.video_dir = video_dir
         self.watermark_dir = watermark_dir
         self.frame_count = frame_count
@@ -25,9 +48,15 @@ class VideoWatermarkDataset(Dataset):
         self.transform = transform
         
         # 获取视频文件列表
-        self.video_files = [f for f in os.listdir(video_dir) if f.endswith('.mp4')]
+        self.video_files = [f for f in os.listdir(video_dir) if f.endswith('.mp4') and is_safe_filename(f)]
         # 获取水印文件列表
-        self.watermark_files = [f for f in os.listdir(watermark_dir) if f.endswith(('.png', '.jpg', '.jpeg'))]
+        self.watermark_files = [f for f in os.listdir(watermark_dir) if f.endswith(('.png', '.jpg', '.jpeg')) and is_safe_filename(f)]
+        
+        # 检查文件列表是否为空
+        if not self.video_files:
+            raise ValueError(f"视频目录中没有找到 .mp4 文件: {video_dir}")
+        if not self.watermark_files:
+            raise ValueError(f"水印目录中没有找到图像文件: {watermark_dir}")
     
     def __len__(self):
         return len(self.video_files)
@@ -35,29 +64,40 @@ class VideoWatermarkDataset(Dataset):
     def __getitem__(self, idx):
         # 加载视频
         video_path = os.path.join(self.video_dir, self.video_files[idx])
-        cap = cv2.VideoCapture(video_path)
-        
-        # 随机选择起始帧
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        start_frame = random.randint(0, max(0, total_frames - self.frame_count))
-        
-        # 提取帧
-        frames = []
-        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-        for _ in range(self.frame_count):
-            ret, frame = cap.read()
-            if not ret:
-                break
-            # 调整大小
-            frame = cv2.resize(frame, self.frame_size)
-            # 转换为RGB
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frames.append(frame)
-        cap.release()
+        cap = None
+        try:
+            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                raise RuntimeError(f"无法打开视频文件: {video_path}")
+            
+            # 随机选择起始帧
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            start_frame = random.randint(0, max(0, total_frames - self.frame_count))
+            
+            # 提取帧
+            frames = []
+            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+            for _ in range(self.frame_count):
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                # 调整大小
+                frame = cv2.resize(frame, self.frame_size)
+                # 转换为RGB
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                frames.append(frame)
+        finally:
+            if cap is not None:
+                cap.release()
         
         # 确保有足够的帧
         while len(frames) < self.frame_count:
-            frames.append(frames[-1])  # 重复最后一帧
+            if not frames:
+                # 创建空白帧
+                blank_frame = np.zeros((*self.frame_size, 3), dtype=np.float32)
+                frames.append(blank_frame)
+            else:
+                frames.append(frames[-1])  # 重复最后一帧
         
         # 转换为numpy数组
         frames = np.array(frames, dtype=np.float32) / 255.0
@@ -92,13 +132,14 @@ class VideoWatermarkDataset(Dataset):
         watermark = cv2.imread(watermark_path, cv2.IMREAD_UNCHANGED)
         
         # 调整水印大小
-        watermark_size = random.randint(50, 150)
+        h, w = self.frame_size
+        max_watermark_size = min(150, w - 10, h - 10)
+        watermark_size = random.randint(50, max_watermark_size)
         watermark = cv2.resize(watermark, (watermark_size, watermark_size))
         
         # 随机选择水印位置
-        h, w = self.frame_size
-        x = random.randint(0, w - watermark_size)
-        y = random.randint(0, h - watermark_size)
+        x = random.randint(0, max(0, w - watermark_size))
+        y = random.randint(0, max(0, h - watermark_size))
         
         # 随机选择水印透明度
         alpha = random.uniform(0.1, 0.5)

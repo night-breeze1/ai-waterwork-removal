@@ -5,6 +5,13 @@ import numpy as np
 import argparse
 from models.architectures.video_unet import VideoUNet
 
+# 自定义tuple类型解析器
+def tuple_type(s):
+    try:
+        return tuple(map(int, s.split(',')))
+    except:
+        raise argparse.ArgumentTypeError("必须是逗号分隔的整数，例如: 256,256")
+
 def process_single_frame(frame, model, device, frame_size=(256, 256)):
     """
     处理单帧图像
@@ -107,9 +114,16 @@ def main():
     parser = argparse.ArgumentParser(description='视频水印去除演示')
     parser.add_argument('--input_path', type=str, required=True, help='输入视频或图像路径')
     parser.add_argument('--model_path', type=str, default='models/pretrained/best_model.pth', help='模型路径')
-    parser.add_argument('--frame_size', type=tuple, default=(256, 256), help='帧大小')
+    parser.add_argument('--frame_size', type=tuple_type, default=(256, 256), help='帧大小 (宽度,高度)')
     
     args = parser.parse_args()
+    
+    # 输入验证
+    if not os.path.exists(args.input_path):
+        raise FileNotFoundError(f"输入文件不存在: {args.input_path}")
+    
+    if not os.path.exists(args.model_path):
+        raise FileNotFoundError(f"模型文件不存在: {args.model_path}")
     
     # 选择设备
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -119,9 +133,12 @@ def main():
     model = VideoUNet().to(device)
     
     # 加载模型权重
-    model.load_state_dict(torch.load(args.model_path, map_location=device))
-    model.eval()
-    print(f'模型加载完成: {args.model_path}')
+    try:
+        model.load_state_dict(torch.load(args.model_path, map_location=device))
+        model.eval()
+        print(f'模型加载完成: {args.model_path}')
+    except Exception as e:
+        raise RuntimeError(f"模型加载失败: {e}")
     
     # 检查输入类型
     if args.input_path.endswith(('.mp4', '.avi', '.mov')):

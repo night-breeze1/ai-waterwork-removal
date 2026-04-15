@@ -4,6 +4,13 @@ from models.architectures.video_unet import VideoUNet
 from utils.data import create_dataloader
 from utils.metrics import calculate_psnr, calculate_ssim, calculate_fps
 
+# 自定义tuple类型解析器
+def tuple_type(s):
+    try:
+        return tuple(map(int, s.split(',')))
+    except:
+        raise argparse.ArgumentTypeError("必须是逗号分隔的整数，例如: 256,256")
+
 def evaluate_model(model, dataloader, device):
     """
     评估模型性能
@@ -50,7 +57,7 @@ def main():
     parser.add_argument('--watermark_dir', type=str, default='data/raw/watermarks', help='水印图像目录')
     parser.add_argument('--batch_size', type=int, default=8, help='批次大小')
     parser.add_argument('--frame_count', type=int, default=16, help='每段视频的帧数')
-    parser.add_argument('--frame_size', type=tuple, default=(256, 256), help='帧大小')
+    parser.add_argument('--frame_size', type=tuple_type, default=(256, 256), help='帧大小 (宽度,高度)')
     parser.add_argument('--model_path', type=str, default='models/pretrained/best_model.pth', help='模型路径')
     
     args = parser.parse_args()

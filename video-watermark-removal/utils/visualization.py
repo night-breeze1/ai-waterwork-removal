@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
+import gc
 
 
 def visualize_frame_comparison(original_frame, watermarked_frame, processed_frame, save_path=None):
@@ -45,6 +46,7 @@ def visualize_frame_comparison(original_frame, watermarked_frame, processed_fram
         plt.show()
 
     plt.close()
+    gc.collect()
 
 
 def visualize_training_history(train_losses, val_losses, val_psnrs, val_ssims, save_path='training_history.png'):
@@ -96,6 +98,7 @@ def visualize_training_history(train_losses, val_losses, val_psnrs, val_ssims, s
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
     print(f'训练历史图已保存到: {save_path}')
     plt.close()
+    gc.collect()
 
 
 def create_video_demo(input_video_path, output_video_path, model, device, frame_size=(256, 256)):
@@ -111,35 +114,45 @@ def create_video_demo(input_video_path, output_video_path, model, device, frame_
     """
     from inference.infer import process_single_frame
 
-    cap = cv2.VideoCapture(input_video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cap = None
+    out = None
+    try:
+        cap = cv2.VideoCapture(input_video_path)
+        if not cap.isOpened():
+            raise RuntimeError(f"无法打开视频文件: {input_video_path}")
+        
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    out_width = width * 3
-    out_height = height
+        out_width = width * 3
+        out_height = height
 
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_video_path, fourcc, fps, (out_width, out_height))
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(output_video_path, fourcc, fps, (out_width, out_height))
+        if not out.isOpened():
+            raise RuntimeError(f"无法创建输出视频文件: {output_video_path}")
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
 
-        # 处理帧
-        processed_frame = process_single_frame(frame, model, device, frame_size)
-        processed_frame = cv2.resize(processed_frame, (width, height))
+            # 处理帧
+            processed_frame = process_single_frame(frame, model, device, frame_size)
+            processed_frame = cv2.resize(processed_frame, (width, height))
 
-        # 合成带水印帧（这里简化处理，实际应该用真实的水印）
-        watermarked_frame = frame.copy()
+            # 合成带水印帧（这里简化处理，实际应该用真实的水印）
+            watermarked_frame = frame.copy()
 
-        # 拼接三个帧
-        combined = np.hstack((frame, watermarked_frame, processed_frame))
-        out.write(combined)
-
-    cap.release()
-    out.release()
+            # 拼接三个帧
+            combined = np.hstack((frame, watermarked_frame, processed_frame))
+            out.write(combined)
+    finally:
+        if cap is not None:
+            cap.release()
+        if out is not None:
+            out.release()
     print(f'演示视频已保存到: {output_video_path}')
 
 
@@ -203,6 +216,7 @@ def visualize_watermark_effect(original_frame, watermark, alpha=0.3, position=(5
         plt.show()
 
     plt.close()
+    gc.collect()
 
 
 if __name__ == "__main__":
