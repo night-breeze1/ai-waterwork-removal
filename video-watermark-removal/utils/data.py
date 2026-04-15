@@ -2,7 +2,8 @@ import os
 import cv2
 import numpy as np
 import random
-from torch.utils.data import Dataset
+import torch
+from torch.utils.data import Dataset, DataLoader
 
 # 文件路径安全性验证
 def is_safe_filename(filename):
